@@ -1,2 +1,2 @@
-# Fallstar
-A game which is developed only by using HTML, CSS, JAVASCRIPT. and it is totally Beginner friendly ..Easily written in Notepad without using other complex apps.
+# catch-the-falling-object-game
+ Source code of catch the falling object game

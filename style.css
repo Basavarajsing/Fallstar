@@ -1,0 +1,69 @@
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  color: white;
+}
+body{
+  overflow: hidden;
+  user-select: none;
+  font-size: 15px;
+  font-family: Arial,Sans-serif;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  background-color: #1c1c1c;
+}
+.details{
+  width: 75%;
+  padding: 5px 0px;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  font-weight: bolder;
+}
+#actions{
+  background-color: blueviolet;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.game-container{
+  position: relative;
+  width: 75%;
+  height: 90%;
+  background-color: #333;
+  border-radius: 7px;
+  display: flex;
+  overflow: hidden;
+  justify-content: center;
+}
+.falling-object{
+  top: 0px;
+  position: absolute;
+  height: 30px;
+  width: 30px;
+}
+#basket{
+  height: 50px;
+  width: 80px;
+  position: absolute;
+  bottom: 5px;
+  background-image: url('./images/basket.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  left: 50%;
+}
+@media only screen and (max-width:370px){
+  .details,.game-container{
+    width: 95%;
+  }
+  .details{
+    font-size: 10px;
+  }
+}
