@@ -1,4 +1,4 @@
-// Fallstar - Enhanced
+// Fallstar - Optimized Catch Game
 const scoreElement = document.getElementById('score');
 const highScoreElement = document.getElementById('hi-score');
 const gamecontainer = document.querySelector('.game-container');
@@ -16,17 +16,13 @@ const finalScoreEl = document.getElementById('final-score');
 const gameStatsEl = document.getElementById('game-stats');
 const newHighEl = document.getElementById('new-high');
 
-// Game Constants & State
-const GAME_DURATION = 60;
+const GAME_DURATION = 60; // 1 minute
 let score = 0;
 let gameMode = 'ready'; // ready | play | pause | ended
 let combo = 0;
 let level = 1;
-// Basket interpolation
-let targetBasketX = 0;
-let currentBasketX = 0;
-let isTouch = false;
-
+let touchStartX = 0;
+let basketX = 0;
 let timeLeft = GAME_DURATION;
 let timerInterval = null;
 let highScore = parseInt(localStorage.getItem('high-score') || '0', 10);
@@ -34,28 +30,18 @@ let gameStarted = false;
 let caughtCount = 0;
 let missedCount = 0;
 
-// Power-up State
-let freezeActive = false;
-let freezeTimer = null;
-let globalSpeedMultiplier = 1.0;
-
-// Object Pooling
+// Object pooling
 const objectPool = [];
-const fallingObjects = new Map();
-const FALL_SPEED_BASE = 2.5; // Slightly faster base speed
-const LEVEL_THRESHOLDS = [0, 20, 50, 100, 150, 200, 300, 500];
+const FALL_SPEED_BASE = 2;
+const LEVEL_THRESHOLDS = [0, 20, 50, 100, 150, 200, 300];
 
-// Types
-// weights overlap: 0-0.5 normal (50%), 0.5-0.7 double (20%), 0.7-0.8 time (10%), 0.8-0.9 freeze (10%), 0.9-1.0 bomb (10%)
-// Adjusted for better gameplay balance
+// Object types: normal (1pt), 2x (double), bomb (-1)
 const OBJECT_TYPES = [
-  { type: 'normal', isBomb: false, color: '#ff6b6b' },
-  { type: 'normal', isBomb: false, color: '#4ecdc4' },
-  { type: 'normal', isBomb: false, color: '#ffe66d' },
-  { type: 'double', isBomb: false, color: '#ffd700' },
-  { type: 'time',   isBomb: false, color: '#4facfe' },
-  { type: 'freeze', isBomb: false, color: '#84fab0' },
-  { type: 'bomb',   isBomb: true,  color: '#2d3436' }
+  { type: 'normal', isBomb: false, isDouble: false, color: '#ff6b6b' },
+  { type: 'normal', isBomb: false, isDouble: false, color: '#4ecdc4' },
+  { type: 'normal', isBomb: false, isDouble: false, color: '#ffe66d' },
+  { type: 'double', isBomb: false, isDouble: true, color: '#ffd700' },
+  { type: 'bomb', isBomb: true, isDouble: false, color: '#2d3436' }
 ];
 
 function getPooledObject() {
@@ -71,17 +57,20 @@ function getPooledObject() {
 
 function returnToPool(obj) {
   obj.style.display = 'none';
-  obj.classList.remove('bomb', 'fruit', 'double', 'time', 'freeze');
+  obj.classList.remove('bomb', 'fruit', 'double', 'powerup');
   objectPool.push(obj);
 }
 
-// UI Functions
-function showGuide() { guideModal.classList.remove('hidden'); }
+// Guide modal - show on first visit
+function showGuide() {
+  guideModal.classList.remove('hidden');
+}
 function hideGuide() {
   guideModal.classList.add('hidden');
   localStorage.setItem('fallstar-guide-seen', '1');
 }
 
+// Game over
 function showGameOver() {
   gameMode = 'ended';
   clearInterval(timerInterval);
@@ -91,26 +80,12 @@ function showGameOver() {
   newHighEl.classList.toggle('hidden', score <= highScore);
   gameOverModal.classList.remove('hidden');
 }
-function hideGameOver() { gameOverModal.classList.add('hidden'); }
 
-function createFloatingText(x, y, text, color) {
-  const el = document.createElement('div');
-  el.className = 'floating-text';
-  el.textContent = text;
-  el.style.left = `${x}px`;
-  el.style.top = `${y}px`;
-  el.style.color = color;
-  gamecontainer.appendChild(el);
-  setTimeout(() => el.remove(), 900);
+function hideGameOver() {
+  gameOverModal.classList.add('hidden');
 }
 
-function triggerShake() {
-  gamecontainer.classList.remove('shake');
-  void gamecontainer.offsetWidth; // trigger reflow
-  gamecontainer.classList.add('shake');
-}
-
-// Game Logic
+// Reset and start new game
 function startNewGame() {
   hideGuide();
   hideGameOver();
@@ -122,11 +97,6 @@ function startNewGame() {
   caughtCount = 0;
   missedCount = 0;
   timeLeft = GAME_DURATION;
-  freezeActive = false;
-  globalSpeedMultiplier = 1.0;
-  
-  if (freezeTimer) clearTimeout(freezeTimer);
-
   scoreElement.textContent = `Score: ${score}`;
   if (comboElement) comboElement.textContent = '';
   if (levelElement) levelElement.textContent = 'Level 1';
@@ -134,19 +104,13 @@ function startNewGame() {
   timerElement.classList.remove('timer-low');
   action.textContent = 'Pause';
 
-  // Cleanup
+  // Clear falling objects
   document.querySelectorAll('.falling-object').forEach(el => el.remove());
   document.querySelectorAll('.particle').forEach(el => el.remove());
-  document.querySelectorAll('.floating-text').forEach(el => el.remove());
   fallingObjects.clear();
   objectPool.length = 0;
 
-  // Basket Reset
-  targetBasketX = (gamecontainer.clientWidth - basket.offsetWidth) / 2;
-  currentBasketX = targetBasketX;
-  updateBasketPos();
-
-  // Timer
+  // Start timer
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     if (gameMode !== 'play') return;
@@ -154,21 +118,16 @@ function startNewGame() {
     const m = Math.floor(timeLeft / 60);
     const s = timeLeft % 60;
     timerElement.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-    
     if (timeLeft <= 10) timerElement.classList.add('timer-low');
-    else timerElement.classList.remove('timer-low');
-    
     if (timeLeft <= 0) showGameOver();
   }, 1000);
 }
 
 startGameBtn.addEventListener('click', startNewGame);
 playAgainBtn.addEventListener('click', startNewGame);
-helpBtn.addEventListener('click', () => {
-  if(gameMode === 'play') checkgamemode(); // pause if playing
-  showGuide();
-});
+helpBtn.addEventListener('click', showGuide);
 
+// Show guide on first load, else show Start button
 if (!localStorage.getItem('fallstar-guide-seen')) {
   showGuide();
 } else {
@@ -189,68 +148,61 @@ function checkgamemode() {
 }
 action.addEventListener('click', checkgamemode);
 
-// Input Handling
-function updateBasketPos() {
-    basket.style.transform = `translateX(${currentBasketX}px)`;
-}
-
+// Mouse controls
+let lastMove = 0;
 document.addEventListener('mousemove', (e) => {
-  if (gameMode !== 'play' || isTouch) return;
+  if (gameMode !== 'play') return;
+  const now = performance.now();
+  if (now - lastMove < 16) return;
+  lastMove = now;
   const rect = gamecontainer.getBoundingClientRect();
-  targetBasketX = e.clientX - rect.left - basket.offsetWidth / 2;
-  // Clamping happens in the update loop or here
-  targetBasketX = Math.max(0, Math.min(targetBasketX, gamecontainer.clientWidth - basket.offsetWidth));
+  basketX = Math.max(0, Math.min(
+    e.clientX - rect.left - basket.offsetWidth / 2,
+    gamecontainer.clientWidth - basket.offsetWidth
+  ));
+  basket.style.transform = `translateX(${basketX}px)`;
 });
 
-// Touch
+// Touch controls
 if ('ontouchstart' in window) {
-  gamecontainer.addEventListener('touchstart', (e) => {
+  document.addEventListener('touchstart', (e) => {
     if (gameMode !== 'play') return;
-    isTouch = true;
-    const rect = gamecontainer.getBoundingClientRect();
-    targetBasketX = e.touches[0].clientX - rect.left - basket.offsetWidth / 2;
-    targetBasketX = Math.max(0, Math.min(targetBasketX, gamecontainer.clientWidth - basket.offsetWidth));
-  }, {passive: true});
-  
-  gamecontainer.addEventListener('touchmove', (e) => {
+    touchStartX = e.changedTouches[0].clientX;
+  });
+  document.addEventListener('touchend', (e) => {
     if (gameMode !== 'play') return;
-    const rect = gamecontainer.getBoundingClientRect();
-    targetBasketX = e.touches[0].clientX - rect.left - basket.offsetWidth / 2;
-    targetBasketX = Math.max(0, Math.min(targetBasketX, gamecontainer.clientWidth - basket.offsetWidth));
-  }, {passive: true});
-  
-  document.addEventListener('touchend', () => {
-    // isTouch = false; // Keep touch mode active to avoid mouse conflict
+    const endX = e.changedTouches[0].clientX;
+    const change = touchStartX - endX;
+    basketX = Math.max(0, Math.min(
+      basketX - change,
+      gamecontainer.clientWidth - basket.offsetWidth
+    ));
+    basket.style.transform = `translateX(${basketX}px)`;
   });
 }
 
-// Particle System
 function createParticles(x, y, color) {
   const particles = [];
   for (let i = 0; i < 8; i++) {
     const angle = (i / 8) * Math.PI * 2;
-    // Randomize distance slightly
-    const dist = 30 + Math.random() * 20;
-    const dx = Math.cos(angle) * dist;
-    const dy = Math.sin(angle) * dist;
-    
+    const dx = Math.cos(angle) * 35;
+    const dy = Math.sin(angle) * 35;
     const p = document.createElement('div');
     p.className = 'particle';
     p.style.cssText = `left:${x}px;top:${y}px;background:${color};--dx:${dx}px;--dy:${dy}px`;
     gamecontainer.appendChild(p);
     particles.push(p);
   }
-  setTimeout(() => particles.forEach(p => p.remove()), 600);
+  setTimeout(() => particles.forEach(p => p.remove()), 500);
 }
 
-// Spawning Logic
+// Falling objects
+const fallingObjects = new Map();
 let lastSpawn = 0;
 let spawnInterval = 1000;
 
 function getFallSpeed() {
-  // Speed increases with level. Freeze mode slows it down.
-  const base = FALL_SPEED_BASE + (level * 0.5);
-  return base * (freezeActive ? 0.4 : 1.0);
+  return FALL_SPEED_BASE + level * 0.8;
 }
 
 function updateLevel() {
@@ -258,202 +210,109 @@ function updateLevel() {
   if (newLevel > level) {
     level = newLevel;
     if (levelElement) levelElement.textContent = `Level ${level}`;
-    // Clamp spawn interval
-    spawnInterval = Math.max(350, 1000 - (level * 60)); 
-    createFloatingText(gamecontainer.clientWidth/2 - 40, gamecontainer.clientHeight/2, "LEVEL UP!", "#fff");
+    spawnInterval = Math.max(400, 1000 - level * 80);
   }
 }
 
-function spawnObject() {
-  if (gameMode !== 'play' || timeLeft <= 0) return;
+function createFallingObject() {
+  if (gameMode !== 'play') return;
+  if (timeLeft <= 0) return;
 
+  // Weight: normal 50%, double 25%, bomb 25%
   const r = Math.random();
-  let typeConfig;
-  
-  // Weighted Random
-  // 0.0 - 0.45 : Normal (45%)
-  // 0.45 - 0.65 : Double (20%)
-  // 0.65 - 0.75 : Time (10%)
-  // 0.75 - 0.85 : Freeze (10%)
-  // 0.85 - 1.00 : Bomb (15%)
-  
-  if (r < 0.45) typeConfig = OBJECT_TYPES[Math.floor(Math.random() * 3)]; // Random normal color
-  else if (r < 0.65) typeConfig = OBJECT_TYPES[3]; // Double
-  else if (r < 0.75) typeConfig = OBJECT_TYPES[4]; // Time
-  else if (r < 0.85) typeConfig = OBJECT_TYPES[5]; // Freeze
-  else typeConfig = OBJECT_TYPES[6]; // Bomb
+  let idx;
+  if (r < 0.5) idx = Math.floor(Math.random() * 3); // normal
+  else if (r < 0.75) idx = 3; // 2x
+  else idx = 4; // bomb
 
+  const config = OBJECT_TYPES[idx];
   const obj = getPooledObject();
-  obj.classList.add(typeConfig.type);
-  if (typeConfig.type === 'normal') obj.classList.add('fruit');
-  
-  // Random X position
-  const maxLeft = gamecontainer.clientWidth - 34;
-  const left = Math.random() * maxLeft;
-  
+  obj.classList.add(config.isBomb ? 'bomb' : config.isDouble ? 'double' : 'fruit');
   obj.style.display = 'block';
-  obj.style.left = left + 'px';
-  obj.style.top = '-40px'; // Start slightly above
-  obj.style.backgroundColor = typeConfig.color;
-  
-  // Set icons/images (using CSS matching or background)
-  // For simplicity using colors/gradients from CSS, but could add specific icons here
-  if(typeConfig.type === 'bomb') {
-      obj.style.backgroundImage = 'none'; // handled in CSS
-  } else {
-      // In a real asset pipeline we'd set images
-      obj.style.backgroundImage = 'none'; 
-  }
-
+  obj.style.left = Math.random() * (gamecontainer.clientWidth - 30) + 'px';
+  obj.style.top = '0';
+  obj.style.backgroundColor = config.color;
+  obj.style.backgroundImage = config.isBomb ? 'none' : `url("./p${idx + 1}.png")`;
+  obj.dataset.isBomb = config.isBomb ? '1' : '0';
+  obj.dataset.isDouble = config.isDouble ? '1' : '0';
   gamecontainer.appendChild(obj);
 
-  fallingObjects.set(obj, {
-    y: -40,
-    x: left,
-    type: typeConfig.type,
-    isBomb: typeConfig.isBomb,
-    width: 34,
-    height: 34,
-    speedVariation: 0.8 + Math.random() * 0.4 // Slight speed variance per object
-  });
+  const data = {
+    top: 0,
+    left: parseFloat(obj.style.left),
+    isBomb: config.isBomb,
+    isDouble: config.isDouble,
+    width: 30,
+    height: 30
+  };
+  fallingObjects.set(obj, data);
 }
 
-function activateFreeze() {
-  freezeActive = true;
-  createFloatingText(basketX + 20, gamecontainer.clientHeight - 80, "❄️ SLOW ❄️", "#84fab0");
-  if (freezeTimer) clearTimeout(freezeTimer);
-  freezeTimer = setTimeout(() => {
-    freezeActive = false;
-  }, 3000);
-}
+function checkCollision(obj, data) {
+  const objLeft = data.left;
+  const objRight = objLeft + data.width;
+  const basketRight = basketX + basket.offsetWidth;
 
-function handleCollision(obj, data) {
+  if (objLeft < basketRight && objRight > basketX) {
     caughtCount++;
-    const centerX = data.x + data.width/2;
-    const centerY = data.y + data.height/2;
-
     if (data.isBomb) {
-        score = Math.max(0, score - 5);
-        combo = 0;
-        triggerShake();
-        createFloatingText(centerX, centerY, "-5", "#ff0000");
+      if (score > 0) score--;
+      combo = 0;
     } else {
-        // Scoring
-        const basePoints = 1;
-        let points = basePoints;
-        let text = "+1";
-        let color = "#fff";
-
-        if (data.type === 'double') {
-            points = 2;
-            text = "+2";
-            color = "#ffd700";
-        }
-        
-        // Combo multiplier
-        if (combo >= 5) {
-            points += 2;
-            text += " (Combo!)";
-        }
-        
-        score += points;
-        combo++;
-
-        // Special Effects
-        if (data.type === 'time') {
-            timeLeft += 5;
-            createFloatingText(centerX, centerY, "+5s", "#4facfe");
-            color = "#4facfe";
-        } else if (data.type === 'freeze') {
-            activateFreeze();
-            color = "#84fab0";
-        } else {
-            createFloatingText(centerX, centerY, text, color);
-        }
-        
-        createParticles(centerX, centerY, color);
+      const baseMult = Math.min(combo + 1, 5);
+      points = data.isDouble ? baseMult * 2 : baseMult;
+      score += points;
+      combo++;
+      createParticles(data.left + 15, data.top + 15, data.isDouble ? '#ffd700' : '#ffe66d');
     }
-
     scoreElement.textContent = `Score: ${score}`;
     if (comboElement) comboElement.textContent = combo > 1 ? `Combo x${combo}` : '';
-    
-    // High Score Check
     if (score > highScore) {
-        highScore = score;
-        localStorage.setItem('high-score', String(highScore));
-        highScoreElement.textContent = `High-Score: ${highScore}`;
+      highScore = score;
+      localStorage.setItem('high-score', String(highScore));
+      highScoreElement.textContent = `High-Score: ${highScore}`;
     }
-
-    updateLevel();
-    
-    // Cleanup
     fallingObjects.delete(obj);
     obj.remove();
     returnToPool(obj);
+    updateLevel();
+    return true;
+  }
+  return false;
 }
 
-// Main Game Loop
 function gameLoop(timestamp) {
   if (gameMode === 'play') {
-    // 1. Spawning
-    if (timestamp - lastSpawn >= spawnInterval) {
-      lastSpawn = timestamp;
-      spawnObject();
-    }
-
-    // 2. Movement & Collision
-    const speedBase = getFallSpeed();
-    const basketRect = basket.getBoundingClientRect();
-    const containerRect = gamecontainer.getBoundingClientRect();
-    
-    // Smooth basket movement (Lerp)
-    // 0.2 lerp factor for smooth lag-free feel
-    if (!isTouch) {
-        currentBasketX += (targetBasketX - currentBasketX) * 0.25;
-    } else {
-        // Direct mapping for touch feels better usually, or very fast lerp
-        currentBasketX += (targetBasketX - currentBasketX) * 0.4;
-    }
-    // Clamp
-    currentBasketX = Math.max(0, Math.min(currentBasketX, gamecontainer.clientWidth - basket.offsetWidth));
-    updateBasketPos();
-
-    // Basket internal hit box (smaller than visual)
-    const basketHitX = currentBasketX + 10;
-    const basketHitW = basket.offsetWidth - 20;
-    const basketTop = gamecontainer.clientHeight - basket.offsetHeight + 10;
+    const speed = getFallSpeed();
 
     fallingObjects.forEach((data, obj) => {
-      // Move
-      data.y += speedBase * data.speedVariation;
-      obj.style.transform = `translate(${data.x}px, ${data.y}px)`;
+      data.top += speed;
+      obj.style.transform = `translateY(${data.top}px)`;
 
-      // Collision Detection
-      // Check if object is near basket vertical plane
-      if (data.y + data.height >= basketTop && data.y < gamecontainer.clientHeight) {
-          // Check horizontal overlap
-          if (data.x + data.width > basketHitX && data.x < basketHitX + basketHitW) {
-              handleCollision(obj, data);
-              return;
-          }
-      }
+      if (data.top >= gamecontainer.clientHeight - basket.offsetHeight - data.height) {
+        if (checkCollision(obj, data)) return;
 
-      // Missed / Out of bounds
-      if (data.y > gamecontainer.clientHeight) {
-          if (!data.isBomb) {
-              missedCount++;
-              combo = 0;
-              if (comboElement) comboElement.textContent = '';
-          }
+        if (data.top >= gamecontainer.clientHeight - data.height) {
+          missedCount++;
+          combo = 0;
+          if (comboElement) comboElement.textContent = '';
           fallingObjects.delete(obj);
           obj.remove();
           returnToPool(obj);
+        }
       }
     });
-  }
 
+    if (timestamp - lastSpawn >= spawnInterval) {
+      lastSpawn = timestamp;
+      createFallingObject();
+    }
+  }
   requestAnimationFrame(gameLoop);
 }
 
-requestAnimationFrame(gameLoop);
+// Init basket
+basketX = (gamecontainer.clientWidth - basket.offsetWidth) / 2;
+basket.style.transform = `translateX(${basketX}px)`;
 
+requestAnimationFrame(gameLoop);
