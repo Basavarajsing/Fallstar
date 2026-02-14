@@ -3,17 +3,65 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>catch the falling object | game</title>
+  <title>Catch the Falling Objects | Fallstar Game</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Guide modal (shown first time / from Help button) -->
+  <div id="guide-modal" class="modal">
+    <div class="modal-content guide-content">
+      <h2>How to Play</h2>
+      <p class="guide-intro">Move your mouse or finger to control the basket. Catch good items, avoid the bomb!</p>
+      <div class="guide-items">
+        <div class="guide-item">
+          <div class="guide-icon normal"></div>
+          <span><strong>Normal Fruit</strong> — 1 point</span>
+        </div>
+        <div class="guide-item">
+          <div class="guide-icon double"></div>
+          <span><strong>2× Golden Fruit</strong> — Double points!</span>
+        </div>
+        <div class="guide-item">
+          <div class="guide-icon time"></div>
+          <span><strong>Time Fruit</strong> — +5 Seconds</span>
+        </div>
+        <div class="guide-item">
+          <div class="guide-icon freeze"></div>
+          <span><strong>Frozen Fruit</strong> — Slow Motion</span>
+        </div>
+        <div class="guide-item">
+          <div class="guide-icon bomb"></div>
+          <span><strong>Bomb</strong> — -5 points & Shake!</span>
+        </div>
+      </div>
+      <p class="guide-timer">⏱️ You have <strong>60 seconds</strong> to score as high as you can!</p>
+      <p class="guide-combo">Build combos by catching fruits in a row for bonus points (up to 5×).</p>
+      <button id="start-game-btn" class="btn-primary">Start Game</button>
+    </div>
+  </div>
+
   <div class="details">
-    <div id="score">Score : 0</div>
-    <div id="hi-score">High Score : 0</div>
-    <button id="actions">Pause</button>
+    <div id="timer" class="timer-badge">1:00</div>
+    <div id="score">Score: 0</div>
+    <div id="hi-score">High-Score: 0</div>
+    <div id="level" class="level-badge">Level 1</div>
+    <div id="combo" class="combo-badge"></div>
+    <button id="help-btn" class="btn-small">?</button>
+    <button id="actions">Start</button>
   </div>
   <div class="game-container">
     <div id="basket"></div>
+  </div>
+
+  <!-- Game Over overlay -->
+  <div id="game-over-modal" class="modal hidden">
+    <div class="modal-content game-over-content">
+      <h2>Time's Up!</h2>
+      <div id="final-score" class="final-score">Score: 0</div>
+      <div id="game-stats" class="game-stats"></div>
+      <div id="new-high" class="new-high hidden">🎉 New High Score!</div>
+      <button id="play-again-btn" class="btn-primary">Play Again</button>
+    </div>
   </div>
 </body>
 <script src="script.js"></script>
